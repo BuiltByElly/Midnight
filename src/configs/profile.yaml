@@ -1,25 +1,90 @@
-# config/profile.yaml
-
 user:
   last_name: "Otoijagha"
   first_name: "Elliot"
   email: "eroms072020@gmail.com"
-
-preferences:
-  oppourtunities:
-    - "remote internships"
-    - "remote junior full time"
-    - siwes
-    - "remote hackathons"
-    - tech_events
-
-  sources:
-
+  years_of_experience: 3
 
   location:
     country: "Nigeria"
     state: "Edo"
     city: "Benin"
+
+sources:
+  - name: ITF SIWES
+    type: website
+    url: "https://www.siwes.itf.gov.ng/Identity/LandingPage/viewEmployerRequest"
+    opportunities:
+      - siwes
+
+  - name: MyJobMag
+    type: website
+    url: "https://www.myjobmag.com/internship/"
+    opportunities:
+      - remote_internships
+      - remote_junior_full_time
+      - siwes
+
+  - name: Remotive
+    type: rss
+    url: "https://remotive.com/feed"
+    opportunities:
+      - remote_internships
+      - remote_junior_full_time
+
+  - name: Himalayas
+    type: rss
+    url: "https://himalayas.app/jobs/rss"
+    opportunities:
+      - remote_internships
+      - remote_junior_full_time
+
+  - name: Flutterwave
+    type: website
+    url: "https://flutterwave.com/ng/careers/vacancies"
+    opportunities:
+      - remote_internships
+      - remote_junior_full_time
+
+  - name: Paystack
+    type: website
+    url: "https://careers.paystack.com/jobs"
+    opportunities:
+      - remote_internships
+      - remote_junior_full_time
+
+  - name: Devpost
+    type: website
+    url: "https://devpost.com/hackathons?status=open"
+    opportunities:
+      - hackathons
+
+  - name: MLH
+    type: website
+    url: "https://ghw.mlh.com/events"
+    opportunities:
+      - hackathons
+      - tech_events
+
+  - name: Tech Faculty
+    type: website
+    url: "https://techfaculty.ng/events"
+    opportunities:
+      - tech_events
+      - hackathons
+
+  - name: Shell Nigeria
+    type: website
+    url: "https://www.shell.com.ng/careers/students-and-graduates/student-industrial-training-and-internship-program.html"
+    opportunities:
+      - siwes
+      - remote_internships
+
+opportunities:
+  - remote_internships
+  - remote_junior_full_time
+  - siwes
+  - hackathons
+  - tech_events
 
 schedule:
   send_time: "00:00"
