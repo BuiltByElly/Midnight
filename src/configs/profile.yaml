@@ -1,0 +1,26 @@
+# config/profile.yaml
+
+user:
+  last_name: "Otoijagha"
+  first_name: "Elliot"
+  email: "eroms072020@gmail.com"
+
+preferences:
+  oppourtunities:
+    - "remote internships"
+    - "remote junior full time"
+    - siwes
+    - "remote hackathons"
+    - tech_events
+
+  sources:
+
+
+  location:
+    country: "Nigeria"
+    state: "Edo"
+    city: "Benin"
+
+schedule:
+  send_time: "00:00"
+  timezone: "Africa/Lagos"
