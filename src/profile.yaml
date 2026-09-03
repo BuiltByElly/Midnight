@@ -1,0 +1,35 @@
+user:
+  last_name: "Otoijagha"
+  first_name: "Elliot"
+  email: "eroms072020@gmail.com"
+  years_of_experience: 3
+
+  location:
+    country: "Nigeria"
+    state: "Edo"
+    city: "Benin"
+
+  tech_stack:
+    - "Python"
+    - "JavaScript"
+    - "TypeScript"
+    - "FastAPI"
+    - "React"
+    - "Next.js"
+    - "Node.js"
+
+  interests:
+   - "Software Development"
+   - "AI/ML"
+   - "Design"
+
+
+opportunities:
+  - "internships"
+  - "junior full time"
+  - "hackathons"
+  - "tech events"
+
+schedule:
+  send_time: "00:00"
+  timezone: "Africa/Lagos"

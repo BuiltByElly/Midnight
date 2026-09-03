@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "httpx>=0.28.1",
+    "playwright>=1.62.0",
+    "pydantic",
+    "pyyaml",
+]
 
 [project.scripts]
 midnight = "midnight:main"
