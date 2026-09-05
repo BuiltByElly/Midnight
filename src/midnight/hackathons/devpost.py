@@ -1,35 +1,60 @@
+import asyncio
+from typing import Any
 
-from bs4 import BeautifulSoup
-from playwright.sync_api import Page
+import httpx
 
 PAGE = 4
 RESULT: list[dict[str, str]] = []
 
+DEVPOST_API_URL = "https://devpost.com/api/hackathons"
 
-def scrape_devpost(page: Page):
-    _ = page.goto(
-        f"https://devpost.com/hackathons?challenge_type[]=online&length[]=weeks&length[]=months&open_to[]=public&order_by=recently-added&page=2&status[]=upcoming&status[]=open&themes[]=Beginner%20Friendly&themes[]=Machine%20Learning%2FAI&themes[]=Social%20Good&themes[]=Open%20Ended&themes[]=Web&themes[]=Design&themes[]=Mobile&page={PAGE}"
-    )
-    html = page.content()
+# Headers mimicking a standard browser AJAX request
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "X-Requested-With": "XMLHttpRequest",
+}
 
-    # Parsing
-    soup = BeautifulSoup(html, "html.parser")
-    hackathons = soup.select(".hackathon-tile")
+# search filter mapping
+QUERY_PARAMS: dict[str, Any] = {
+    "challenge_type[]": "online",
+    "length[]": ["weeks", "months"],
+    "open_to[]": "public",
+    "order_by": "recently-added",
+    "status[]": ["upcoming", "open"],
+    "themes[]": [
+        "Beginner Friendly",
+        "Machine Learning/AI",
+        "Social Good",
+        "Open Ended",
+        "Web",
+        "Design",
+        "Mobile",
+    ],
+}
 
-    # Normalizing
-    for hackathon in hackathons:
-        title = hackathon.select_one("h3")
-        url = hackathon.select_one(".tile-anchor")
-        source = "Devpost"
-        date = hackathon.select_one(".submission-period")
 
-        RESULT.append(
-            {
-                "title": title.text if title else "Error getting title",
-                "url": str(url.get("href")) if url else "Error getting url",
-                "source": source,
-                "date": date.text if date else "Error getting date",
-            }
-        )
+async def fetch_devpost_page(client: httpx.AsyncClient, page: int):
+    """Fetch a single page of hackathons from Devpost API."""
+    params = {**QUERY_PARAMS, "page": page}
+    try:
+        response = await client.get(DEVPOST_API_URL, params=params)
+        _ = response.raise_for_status()
+        data = response.json()
+        return data.get("hackathons", [])
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error on page {page}: {e.response.status_code}")
+    except httpx.HTTPError as e:
+        print(f"Failed to fetch Devpost page {page}: {e}")
+    return []
 
-    return RESULT
+
+async def scrape_devpost(max_pages: int = 3):
+    """Fetch pages concurrently using a shared async HTTP client."""
+    async with httpx.AsyncClient(
+        headers=HEADERS, timeout=10.0, follow_redirects=True
+    ) as client:
+        tasks = [fetch_devpost_page(client, page) for page in range(1, max_pages + 1)]
+        pages = await asyncio.gather(*tasks)
+        # Flatten page arrays into a single list
+        return [item for page in pages for item in page]
