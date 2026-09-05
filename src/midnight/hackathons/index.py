@@ -31,7 +31,7 @@ def get_hackathon_data(browser: Browser):
 
         available.remove(hackathon)
 
-    print("Found 5 hackathons worth your time...")
+    print(f"Found {len(HACKATHON_DATA)} hackathons worth your time...")
 
     seen.update(selected_urls)
     save_seen("hackathons", seen)
