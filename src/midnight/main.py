@@ -15,8 +15,11 @@ def main():
     # profile = load_profile()
     hackathon_data = asyncio.run(get_hackathon_data())
     end = perf_counter()
-    print(hackathon_data)
-    print(f"finished in {round(end - start, 1)} seconds")
+    print("=" * 80)
+    print(
+        f"Found {len(hackathon_data):,} hackathons in {round(end - start, 1)} seconds"
+    )
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":

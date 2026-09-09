@@ -45,9 +45,9 @@ async def fetch_devpost_page(
         hackathons = data.get("hackathons", [])
         return hackathons if isinstance(hackathons, list) else []
     except httpx.HTTPStatusError as e:
-        print(f"HTTP error on page {page}: {e.response.status_code}")
+        print(f"  Devpost page {page}: HTTP error {e.response.status_code}")
     except httpx.HTTPError as e:
-        print(f"Failed to fetch Devpost page {page}: {e}")
+        print(f"  Devpost page {page}: failed to fetch ({e})")
     return []
 
 
@@ -55,6 +55,10 @@ async def scrape_devpost(max_pages: int = 3) -> list[dict[str, Any]]:
     """Fetch pages concurrently using a shared async HTTP client."""
     if max_pages < 1:
         return []
+    print("=" * 80)
+    print(f"FETCHING HACKATHONS FROM {max_pages} PAGES ON DEVPOST")
+    print("=" * 80 + "\n")
+
     async with httpx.AsyncClient(
         headers=HEADERS,
         timeout=10.0,
@@ -62,5 +66,15 @@ async def scrape_devpost(max_pages: int = 3) -> list[dict[str, Any]]:
     ) as client:
         tasks = [fetch_devpost_page(client, page) for page in range(1, max_pages + 1)]
         pages = await asyncio.gather(*tasks)
-        # Flatten page arrays into a single list
-        return [item for page in pages for item in page]
+
+    for i, items in enumerate(pages, 1):
+        print(f"  [{i}/{len(pages)}] page {i}: {len(items):,} hackathons")
+
+    total = sum(len(items) for items in pages)
+    print("\nDETAILED STATS FOR DEVPOST:")
+    print(f"  Pages checked: {len(pages)}")
+    print(f"  Total hackathons: {total:,}")
+    print()
+
+    # Flatten page arrays into a single list
+    return [item for page in pages for item in page]
