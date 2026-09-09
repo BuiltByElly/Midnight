@@ -1,10 +1,13 @@
 {
   "seen": {
     "hackathons": [
-
+      "https://call-e.devpost.com/",
+      "https://agentic-cinema.devpost.com/",
+      "https://venturefix.devpost.com/",
+      "https://evorozen-apex.devpost.com/",
+      "https://hyperbloom-september.devpost.com/"
     ],
-    "internships": [],
-    "junior_full_time": [],
+    "jobs": [],
     "tech_events": []
   }
 }

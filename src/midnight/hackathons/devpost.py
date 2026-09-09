@@ -3,9 +3,6 @@ from typing import Any
 
 import httpx
 
-PAGE = 4
-RESULT: list[dict[str, str]] = []
-
 DEVPOST_API_URL = "https://devpost.com/api/hackathons"
 
 # Headers mimicking a standard browser AJAX request
@@ -34,14 +31,19 @@ QUERY_PARAMS: dict[str, Any] = {
 }
 
 
-async def fetch_devpost_page(client: httpx.AsyncClient, page: int):
+async def fetch_devpost_page(
+    client: httpx.AsyncClient, page: int
+) -> list[dict[str, Any]]:
     """Fetch a single page of hackathons from Devpost API."""
     params = {**QUERY_PARAMS, "page": page}
     try:
         response = await client.get(DEVPOST_API_URL, params=params)
-        _ = response.raise_for_status()
+        response.raise_for_status()
         data = response.json()
-        return data.get("hackathons", [])
+        if not isinstance(data, dict):
+            return []
+        hackathons = data.get("hackathons", [])
+        return hackathons if isinstance(hackathons, list) else []
     except httpx.HTTPStatusError as e:
         print(f"HTTP error on page {page}: {e.response.status_code}")
     except httpx.HTTPError as e:
@@ -49,10 +51,14 @@ async def fetch_devpost_page(client: httpx.AsyncClient, page: int):
     return []
 
 
-async def scrape_devpost(max_pages: int = 3):
+async def scrape_devpost(max_pages: int = 3) -> list[dict[str, Any]]:
     """Fetch pages concurrently using a shared async HTTP client."""
+    if max_pages < 1:
+        return []
     async with httpx.AsyncClient(
-        headers=HEADERS, timeout=10.0, follow_redirects=True
+        headers=HEADERS,
+        timeout=10.0,
+        follow_redirects=True,
     ) as client:
         tasks = [fetch_devpost_page(client, page) for page in range(1, max_pages + 1)]
         pages = await asyncio.gather(*tasks)

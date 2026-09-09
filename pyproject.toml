@@ -10,6 +10,7 @@ dependencies = [
     "playwright>=1.62.0",
     "pydantic",
     "pyyaml",
+    "requests>=2.34.2",
 ]
 
 [project.scripts]
