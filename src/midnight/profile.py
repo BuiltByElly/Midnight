@@ -9,26 +9,20 @@ class ProfileSchedule(BaseModel):
     timezone: str
 
 
-# class ProfileSource(BaseModel):
-#     name: str
-#     type: str
-#     url: str
-#     opportunities: list[str]
-
-
 class ProfileLocation(BaseModel):
     city: str
     state: str
     country: str
+    remote: bool
 
 
 class ProfileUser(BaseModel):
-    last_name: str
-    first_name: str
+    name: str
     email: str
     years_of_experience: int
     location: ProfileLocation
     tech_stack: list[str]
+    interests: list[str]
 
 
 class Profile(BaseModel):

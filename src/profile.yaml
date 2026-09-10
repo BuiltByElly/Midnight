@@ -1,13 +1,13 @@
 user:
-  last_name: "Otoijagha"
-  first_name: "Elliot"
-  email: "eroms072020@gmail.com"
+  name: "Elliot"
+  email: "otoijaghaelliot@gmail.com"
   years_of_experience: 3
 
   location:
     country: "Nigeria"
     state: "Edo"
     city: "Benin"
+    remote: true
 
   tech_stack:
     - "Python"
@@ -22,11 +22,13 @@ user:
    - "Software Development"
    - "AI/ML"
    - "Design"
+   - "Open source"
+   - "Web"
+   - "Mobiles"
 
 
 opportunities:
-  - "internships"
-  - "junior full time"
+  - "jobs"
   - "hackathons"
   - "tech events"
 
