@@ -34,7 +34,14 @@ QUERY_PARAMS: dict[str, Any] = {
 async def fetch_devpost_page(
     client: httpx.AsyncClient, page: int
 ) -> list[dict[str, Any]]:
-    """Fetch a single page of hackathons from Devpost API."""
+    """Fetch a single page of hackathons from Devpost API.
+    Args:
+        client: a httpx async client instance
+        page: the current page
+
+    Returns:
+        A list of dicts of [str, Any]
+    """
     params = {**QUERY_PARAMS, "page": page}
     try:
         response = await client.get(DEVPOST_API_URL, params=params)
@@ -52,7 +59,14 @@ async def fetch_devpost_page(
 
 
 async def scrape_devpost(max_pages: int = 3) -> list[dict[str, Any]]:
-    """Fetch pages concurrently using a shared async HTTP client."""
+    """Fetch pages concurrently using a shared async HTTP client.
+
+    Args:
+        max_pages: max pages of devpost pages to scrape.
+
+    Returns:
+       A list of dicts of [str, Any]
+    """
     if max_pages < 1:
         return []
     print("=" * 80)
