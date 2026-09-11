@@ -6,6 +6,7 @@ from midnight.hackathons.devpost import scrape_devpost
 from midnight.utils.seen import load_seen, save_seen
 
 NUM_HACKATHONS = 5
+MAX_PAGES = 3
 
 
 async def get_hackathon_data() -> list[dict[str, Any]]:
@@ -15,7 +16,7 @@ async def get_hackathon_data() -> list[dict[str, Any]]:
     print("Scraping hackathons worth your time")
     print("=" * 80)
 
-    devpost_data = await scrape_devpost()
+    devpost_data = await scrape_devpost(MAX_PAGES)
     print(f"\n  >>> DEVPOST COMPLETE: {len(devpost_data):,} hackathons <<<\n")
 
     seen_devpost = load_seen("hackathons")

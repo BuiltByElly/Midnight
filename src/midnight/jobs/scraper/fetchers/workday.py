@@ -21,7 +21,7 @@ from midnight.jobs.scraper.classify import (
     parse_workday_posted_on,
 )
 from midnight.jobs.scraper.geo import enrich_location
-from midnight.jobs.scraper.http import random_user_agent
+from midnight.jobs.scraper.http import parse_retry_after, random_user_agent
 from midnight.jobs.scraper.models import FetchResult, get_job_metadata
 
 
@@ -81,7 +81,8 @@ def fetch_company_jobs_workday(slug: str) -> FetchResult:
             if response.status_code != 200:
                 if retries < max_retries:
                     retries += 1
-                    time.sleep(random.uniform(2.0, 4.0))
+                    hint = parse_retry_after(response)
+                    time.sleep(hint if hint is not None else random.uniform(2.0, 4.0))
                     continue
                 break
 

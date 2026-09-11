@@ -24,7 +24,11 @@ import time
 import requests
 
 from midnight.jobs.scraper.classify import is_recruiter_company, job_tier_classification
-from midnight.jobs.scraper.http import random_user_agent
+from midnight.jobs.scraper.http import (
+    is_retryable_status,
+    random_user_agent,
+    retry_delay,
+)
 from midnight.jobs.scraper.models import FetchResult, get_job_metadata
 
 
@@ -66,12 +70,12 @@ def fetch_company_jobs_ashby(slug: str) -> FetchResult:
                 data = response.json()
                 jobs = (data.get("data") or {}).get("jobBoard") or {}
                 jobs = jobs.get("jobPostings") or []
-            elif response.status_code in (429, 503, 502) and attempt < max_retries:
-                backoff = (2**attempt) + random.uniform(0.5, 1.5)
+            elif is_retryable_status(response.status_code) and attempt < max_retries:
+                delay = retry_delay(response, attempt)
                 print(
-                    f"  Ashby {slug}: {response.status_code}, retrying in {backoff:.1f}s"
+                    f"  Ashby {slug}: {response.status_code}, retrying in {delay:.1f}s"
                 )
-                time.sleep(backoff)
+                time.sleep(delay)
                 headers["User-Agent"] = random_user_agent()
                 continue
             elif attempt > max_retries:

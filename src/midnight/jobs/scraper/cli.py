@@ -1,15 +1,15 @@
-"""Command-line entry point: scrape every platform and save results.
+"""Command-line entry point: scrape every platform and rank results.
 
 Flow: load company lists -> fan out per platform via
 :func:`runner.fetch_all_jobs` (platforms run concurrently) -> merge ->
-:func:`results.save_results` -> print the final summary.
+:func:`results.save_results` (clean, rank by profile, return top jobs)
+-> print the final summary.
 
 Run directly::
 
-    python -m midnight.jobs.scraper --source manual
+    python -m midnight.jobs.scraper
 """
 
-import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from midnight.jobs.scraper.companies import load_companies, load_paylocity
@@ -19,11 +19,9 @@ from midnight.jobs.scraper.config import (
     GREENHOUSE_FILE,
     ICIMS_FILE,
     LEVER_FILE,
-    OUTPUT_DIR,
     PAYLOCITY_FILE,
     WORKDAY_FILE,
     ensure_dirs,
-    set_source_type,
 )
 from midnight.jobs.scraper.fetchers import FETCHERS
 from midnight.jobs.scraper.models import Job
@@ -91,29 +89,12 @@ def scrape_all(companies: dict[str, set[str]]) -> tuple[dict[str, int], list[Job
     return all_active_companies, all_jobs
 
 
-def main(argv: list[str] | None = None) -> None:
-    """Run the full scrape and save results.
-
-    Args:
-        argv: Optional argument list for testing (defaults to
-            ``sys.argv``). Supports ``--source automated|manual``.
-    """
+def main() -> None:
+    """Run the full scrape and rank results."""
     print("\n" + "=" * 80)
     print("JOB BOARD AGGREGATOR")
     print("Scraping all jobs from ATS companies")
-    print("=" * 80)
-
-    parser = argparse.ArgumentParser(description="Job Board Aggregator Scraper")
-    parser.add_argument(
-        "--source",
-        choices=["automated", "manual"],
-        default="manual",
-        help="Source type: automated (GitHub Actions) or manual (local run)",
-    )
-    args = parser.parse_args(argv)
-    set_source_type(args.source)
-
-    print(f"\nRunning in {args.source.upper()} mode\n")
+    print("=" * 80 + "\n")
 
     ensure_dirs()
 
@@ -128,7 +109,7 @@ def main(argv: list[str] | None = None) -> None:
     # Combine all company sets for total count
     all_companies = set().union(*companies.values())
 
-    save_results(all_companies, all_active_companies, all_jobs)
+    top_jobs = save_results(all_jobs)
 
     # Final summary
     print("=" * 80)
@@ -137,7 +118,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Total companies:   {len(all_companies):,}")
     print(f"Active companies:  {len(all_active_companies):,}")
     print(f"Total jobs:        {len(all_jobs):,}")
-    print(f"\nAll data saved to '{OUTPUT_DIR}/' directory")
+    print(f"Selected top jobs: {len(top_jobs):,}")
     print("=" * 80 + "\n")
 
 

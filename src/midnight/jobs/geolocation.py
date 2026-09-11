@@ -545,7 +545,7 @@ def strip_work_arrangement(normalized):
 
 
 def parse_job_location(location_str):
-    result: dict[str, bool | None | str] = {
+    result: dict[str, bool | str | None] = {
         "remote": False,
         "city": None,
         "admin": None,

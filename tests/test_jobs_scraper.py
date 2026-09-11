@@ -13,7 +13,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-from midnight.jobs.scraper import config
 from midnight.jobs.scraper.classify import (
     clean_job_data,
     is_recruiter_company,
@@ -84,15 +83,10 @@ class TestPaylocityLocation(unittest.TestCase):
 
 
 class TestMetadata(unittest.TestCase):
-    def test_source_label(self):
-        old = config.SOURCE_TYPE
-        try:
-            config.set_source_type("manual")
-            meta = get_job_metadata()
-            self.assertEqual(meta["source"], "manual")
-            self.assertTrue(meta["scraped_at"].endswith("Z"))
-        finally:
-            config.set_source_type(old)
+    def test_scraped_at_timestamp(self):
+        meta = get_job_metadata()
+        self.assertEqual(list(meta), ["scraped_at"])
+        self.assertTrue(meta["scraped_at"].endswith("Z"))
 
 
 class TestCompanies(unittest.TestCase):
@@ -179,6 +173,7 @@ class TestGreenhouseFetcher(unittest.TestCase):
         with (
             mock.patch("requests.get", return_value=resp),
             mock.patch.object(gh, "enrich_location", return_value=(False, [1.0, 2.0])),
+            mock.patch("time.sleep"),
         ):
             _slug, jobs, status = gh.fetch_company_jobs_greenhouse("acme")
         self.assertEqual(status, 200)
@@ -193,10 +188,111 @@ class TestGreenhouseFetcher(unittest.TestCase):
         import midnight.jobs.scraper.fetchers.greenhouse as gh
 
         resp = mock.Mock(status_code=404)
-        with mock.patch("requests.get", return_value=resp):
+        with (
+            mock.patch("requests.get", return_value=resp),
+            mock.patch("time.sleep"),
+        ):
             self.assertEqual(
                 gh.fetch_company_jobs_greenhouse("nope"), ("nope", [], 404)
             )
+
+    def test_retries_then_succeeds(self):
+        import midnight.jobs.scraper.fetchers.greenhouse as gh
+
+        bad = mock.Mock(status_code=429, headers={})
+        good = mock.Mock(status_code=200)
+        good.json.return_value = {"jobs": []}
+        with (
+            mock.patch("requests.get", side_effect=[bad, good]) as get,
+            mock.patch("time.sleep"),
+        ):
+            self.assertEqual(
+                gh.fetch_company_jobs_greenhouse("acme"), ("acme", [], 200)
+            )
+        self.assertEqual(get.call_count, 2)
+
+    def test_retry_after_honored(self):
+        import midnight.jobs.scraper.fetchers.greenhouse as gh
+
+        bad = mock.Mock(status_code=503, headers={"Retry-After": "7"})
+        good = mock.Mock(status_code=200)
+        good.json.return_value = {"jobs": []}
+        with (
+            mock.patch("requests.get", side_effect=[bad, good]),
+            mock.patch("time.sleep") as sleep,
+        ):
+            gh.fetch_company_jobs_greenhouse("acme")
+        sleep.assert_any_call(7.0)
+
+
+class TestLeverFetcher(unittest.TestCase):
+    def test_retries_then_succeeds(self):
+        import midnight.jobs.scraper.fetchers.lever as lv
+
+        bad = mock.Mock(status_code=429, headers={})
+        good = mock.Mock(status_code=200)
+        good.json.return_value = []
+        with (
+            mock.patch("requests.get", side_effect=[bad, good]) as get,
+            mock.patch("time.sleep"),
+        ):
+            self.assertEqual(lv.fetch_company_jobs_lever("acme"), ("acme", [], 200))
+        self.assertEqual(get.call_count, 2)
+
+
+class TestRetryHelpers(unittest.TestCase):
+    def test_is_retryable_status(self):
+        from midnight.jobs.scraper.http import is_retryable_status
+
+        self.assertTrue(is_retryable_status(429))
+        self.assertTrue(is_retryable_status(503))
+        self.assertFalse(is_retryable_status(404))
+        self.assertFalse(is_retryable_status(200))
+        self.assertFalse(is_retryable_status(None))
+
+    def test_compute_backoff_bounds(self):
+        from midnight.jobs.scraper.http import compute_backoff
+
+        with mock.patch("random.uniform", return_value=1.0):
+            self.assertEqual(compute_backoff(0), 2.0)
+            self.assertEqual(compute_backoff(2), 5.0)
+
+    def test_parse_retry_after_seconds(self):
+        from midnight.jobs.scraper.http import parse_retry_after
+
+        self.assertEqual(
+            parse_retry_after(mock.Mock(headers={"Retry-After": "5"})), 5.0
+        )
+        # Clamped to the ceiling
+        self.assertEqual(
+            parse_retry_after(mock.Mock(headers={"Retry-After": "3600"})), 60.0
+        )
+
+    def test_parse_retry_after_missing_or_invalid(self):
+        from midnight.jobs.scraper.http import parse_retry_after
+
+        self.assertIsNone(parse_retry_after(mock.Mock(headers={})))
+        self.assertIsNone(parse_retry_after(mock.Mock(headers={"Retry-After": "soon"})))
+
+    def test_parse_retry_after_http_date(self):
+        from datetime import UTC, datetime, timedelta
+
+        from midnight.jobs.scraper.http import parse_retry_after
+
+        now = datetime.now(UTC)
+        future = (now + timedelta(seconds=30)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        delay = parse_retry_after(mock.Mock(headers={"Retry-After": future}), now=now)
+        self.assertIsNotNone(delay)
+        self.assertGreater(delay, 0)
+        self.assertLessEqual(delay, 30.0)
+
+    def test_retry_delay_prefers_header(self):
+        from midnight.jobs.scraper.http import retry_delay
+
+        resp = mock.Mock(headers={"Retry-After": "4"})
+        self.assertEqual(retry_delay(resp, 0), 4.0)
+        fallback = retry_delay(mock.Mock(headers={}), 0)
+        self.assertGreaterEqual(fallback, 1.5)
 
 
 class TestWorkdayFetcher(unittest.TestCase):
@@ -229,35 +325,168 @@ class TestRunner(unittest.TestCase):
             self.assertEqual(load_dead_slugs("t"), {"dead"})
 
 
-class TestResults(unittest.TestCase):
-    def test_writes_output_files(self):
+def _fixture_profile():
+    from midnight.profile import (
+        Profile,
+        ProfileLocation,
+        ProfileSchedule,
+        ProfileUser,
+    )
+
+    return Profile(
+        user=ProfileUser(
+            name="T",
+            email="t@x",
+            years_of_experience=3,
+            location=ProfileLocation(
+                city="Benin", state="Edo", country="Nigeria", remote=True
+            ),
+            tech_stack=["Python", "React"],
+            interests=["AI/ML"],
+        ),
+        opportunities=["jobs"],
+        schedule=ProfileSchedule(send_time="00:00", timezone="Africa/Lagos"),
+    )
+
+
+def _job(title, url, company="acme", **overrides):
+    base = {"title": title, "url": url, "company": company}
+    base.update(overrides)
+    return base
+
+
+class TestJobPost(unittest.TestCase):
+    def test_normalization_fallbacks(self):
+        from midnight.jobs.scraper.models import JobPost, normalize_jobs
+
+        post = JobPost(absolute_url="http://x/1", company_slug="acme")
+        self.assertEqual((post.url, post.company), ("http://x/1", "acme"))
+        self.assertEqual(JobPost(skill_level="wizard").skill_level, "entry")
+        # extras are preserved, non-dicts skipped
+        posts = normalize_jobs(
+            [{"title": "E", "url": "http://x", "ats": "Greenhouse"}, "nope"]
+        )
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0].ats, "Greenhouse")
+
+
+class TestRankJobs(unittest.TestCase):
+    def _rank(self, jobs, seen):
         import midnight.jobs.scraper.results as res
 
+        saved = {}
+
+        def fake_save(key, urls):
+            saved[key] = list(urls)
+
+        with (
+            mock.patch.object(res, "load_profile", return_value=_fixture_profile()),
+            mock.patch.object(res, "load_seen", return_value=list(seen)),
+            mock.patch.object(res, "save_seen", side_effect=fake_save),
+        ):
+            top = res._rank_jobs_from_profile(jobs)
+        return top, saved
+
+    def test_picks_best_seven_skips_seen(self):
+        jobs = [
+            _job(
+                "Senior Python Engineer",
+                "http://u/j1",
+                company="zeta",
+                remote=True,
+                skill_level="senior",
+            ),
+            _job(
+                "Python Developer",
+                "http://u/j2",
+                location="Lagos, Nigeria",
+                skill_level="entry",
+            ),
+            _job("React Frontend", "http://u/j3", remote=True, skill_level="mid"),
+            _job("Accountant", "http://u/j4", location="Benin, Edo", skill_level="mid"),
+            _job(
+                "Python Engineer",
+                "http://u/j5",
+                company="talent-agency",
+                remote=True,
+                skill_level="mid",
+            ),
+            _job(
+                "ML Engineer",
+                "http://u/j6",
+                company="acme",
+                remote=True,
+                skill_level="mid",
+            ),
+            _job(
+                "Java Developer", "http://u/j7", location="Berlin", skill_level="senior"
+            ),
+            _job("Python Intern", "http://u/j8", remote=True, skill_level="intern"),
+            _job(
+                "Go Developer", "http://u/j9", location="Berlin", skill_level="senior"
+            ),
+            _job("Python Guru", "http://seen", remote=True, skill_level="mid"),
+        ]
+        top, saved = self._rank(jobs, ["http://seen"])
+        urls = [job["url"] for job in top]
+        self.assertEqual(
+            urls,
+            [
+                "http://u/j2",  # 10: stack + country + junior-entry
+                "http://u/j8",  # 9: stack + remote + junior-intern
+                "http://u/j3",  # 6: stack + remote + junior-mid
+                "http://u/j5",  # 4, tiebreak before zeta
+                "http://u/j1",  # 4
+                "http://u/j4",  # 3, tiebreak before ML Engineer
+                "http://u/j6",  # 3
+            ],
+        )
+        # same dict shape as normalized input
+        self.assertTrue(all(isinstance(job, dict) for job in top))
+        self.assertIn("skill_level", top[0])
+        # seen-bound urls recorded after the pre-existing ones
+        self.assertEqual(saved["jobs"][0], "http://seen")
+        self.assertEqual(len(saved["jobs"]), 8)
+
+    def test_fewer_than_seven(self):
+        top, _ = self._rank([_job("Python Dev", "http://u/1", remote=True)], [])
+        self.assertEqual([job["url"] for job in top], ["http://u/1"])
+
+
+class TestSaveResults(unittest.TestCase):
+    def test_returns_ranked_and_appends_manifest(self):
+        import midnight.jobs.scraper.results as res
+        from midnight.jobs.scraper import config
+
+        jobs = [
+            _job("Python Dev", f"http://u/{i}", remote=True, skill_level="mid")
+            for i in range(3)
+        ]
+        jobs.append({"title": "", "url": "http://u/bad", "company": "a"})
         with tempfile.TemporaryDirectory() as tmp:
-            chunks = os.path.join(tmp, "chunks")
+            log = os.path.join(tmp, "manifest.log")
             with (
-                mock.patch.object(res, "OUTPUT_DIR", tmp),
-                mock.patch.object(res, "CHUNKS_DIR", chunks),
-                mock.patch.object(res, "ensure_dirs", lambda: None),
+                mock.patch.object(res, "load_profile", return_value=_fixture_profile()),
+                mock.patch.object(res, "load_seen", return_value=[]),
+                mock.patch.object(res, "save_seen"),
+                mock.patch.object(config, "MANIFEST_LOG", log),
             ):
-                res.save_results(
-                    {"a", "b"},
-                    {"a": 2},
-                    [
-                        {"title": "Eng", "url": "http://x", "company": "a"},
-                        {"title": "", "url": "http://x", "company": "a"},
-                    ],
-                )
-            for name in (
-                "all_companies.json",
-                "active_companies.json",
-                "all_jobs.json",
-                "metadata.json",
-            ):
-                self.assertTrue(os.path.exists(os.path.join(tmp, name)), name)
-            with open(os.path.join(tmp, "metadata.json"), encoding="utf-8") as f:
-                meta = json.load(f)
-            self.assertEqual((meta["total_jobs"], meta["total_companies"]), (1, 2))
+                top = res.save_results(jobs)
+                res.save_results(jobs)
+            self.assertEqual(len(top), 3)
+            self.assertTrue(all(isinstance(job, dict) for job in top))
+            with open(log, encoding="utf-8") as f:
+                lines = f.read().strip().split("\n")
+            self.assertEqual(len(lines), 2)  # append-only: one line per run
+            entry = json.loads(lines[0])
+            self.assertEqual(
+                (entry["total_jobs"], entry["selected"], len(entry["urls"])),
+                (3, 3, 3),
+            )
+            # no JSON output files written
+            self.assertEqual(
+                [name for name in os.listdir(tmp) if name.endswith(".json")], []
+            )
 
 
 if __name__ == "__main__":

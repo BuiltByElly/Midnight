@@ -29,9 +29,12 @@ from midnight.jobs.scraper.companies import PAYLOCITY_NAMES
 from midnight.jobs.scraper.config import PAGEDATA_RE
 from midnight.jobs.scraper.geo import enrich_location
 from midnight.jobs.scraper.http import (
+    compute_backoff,
+    is_retryable_status,
     paylocity_session,
     random_user_agent,
     reset_paylocity_session,
+    retry_delay,
 )
 from midnight.jobs.scraper.models import FetchResult, get_job_metadata
 
@@ -62,13 +65,13 @@ def fetch_company_jobs_paylocity(slug: str) -> FetchResult:
                 session.close()
             session = reset_paylocity_session()
             if attempt < max_retries:
-                time.sleep((2**attempt) + random.uniform(1.0, 2.0))
+                time.sleep(compute_backoff(attempt, 1.0, 2.0))
                 continue
             print(f"Error fetching Paylocity for {slug}: {e}")
             return slug, [], None
-        if response.status_code in (429, 503, 502):
+        if is_retryable_status(response.status_code):
             if attempt < max_retries:
-                time.sleep((2**attempt) + random.uniform(1.0, 2.0))
+                time.sleep(retry_delay(response, attempt, 1.0, 2.0))
                 continue
             return slug, [], response.status_code
         if response.status_code != 200:

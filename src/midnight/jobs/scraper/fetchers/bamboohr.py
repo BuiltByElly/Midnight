@@ -15,7 +15,12 @@ import requests
 
 from midnight.jobs.scraper.classify import is_recruiter_company, job_tier_classification
 from midnight.jobs.scraper.geo import enrich_location
-from midnight.jobs.scraper.http import random_user_agent
+from midnight.jobs.scraper.http import (
+    compute_backoff,
+    is_retryable_status,
+    random_user_agent,
+    retry_delay,
+)
 from midnight.jobs.scraper.models import FetchResult, get_job_metadata
 
 
@@ -90,16 +95,15 @@ def fetch_company_jobs_bamboohr(slug: str) -> FetchResult:
 
                 return slug, [], response.status_code
 
-            if response.status_code in (429, 503, 502) and attempt < max_retries:
-                backoff = (2**attempt) + random.uniform(0.5, 1.5)
-                time.sleep(backoff)
+            if is_retryable_status(response.status_code) and attempt < max_retries:
+                time.sleep(retry_delay(response, attempt))
                 continue
 
             return slug, [], response.status_code
 
         except requests.exceptions.SSLError:
             if attempt < max_retries:
-                time.sleep((2**attempt) + random.uniform(0.5, 1.5))
+                time.sleep(compute_backoff(attempt))
                 continue
             return slug, [], None
         except (requests.RequestException, ValueError) as e:

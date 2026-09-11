@@ -24,7 +24,7 @@ def load_companies(filepath: str) -> set[str]:
         missing platform list never aborts a whole scrape run.
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             companies = set(json.load(f))
         print(f"Loaded {len(companies):,} companies from {filepath}")
         return companies
@@ -45,7 +45,7 @@ def load_paylocity(filepath: str) -> set[str]:
         Empty when the file does not exist.
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             rows = json.load(f)
     except FileNotFoundError:
         print(f"File not found: {filepath}")

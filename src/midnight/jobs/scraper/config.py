@@ -11,11 +11,10 @@ Layout (all paths derive from this file's location):
 
 import os
 import re
+from pathlib import Path
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-JOBS_DIR = os.path.dirname(THIS_DIR)
-MIDNIGHT_DIR = os.path.dirname(JOBS_DIR)
-DATA_DIR = os.path.join(MIDNIGHT_DIR, "data")
+ROOT_DIR = Path(__file__).parent.parent.parent
+DATA_DIR = os.path.join(ROOT_DIR, "data")
 
 # Company lists (flat JSON slug lists), except Paylocity (see companies.py).
 GREENHOUSE_FILE = os.path.join(DATA_DIR, "greenhouse_companies.json")
@@ -28,37 +27,16 @@ PAYLOCITY_FILE = os.path.join(DATA_DIR, "paylocity_companies_clean.json")
 
 LOCATIONS_FILE = os.path.join(DATA_DIR, "locations.json")
 
-OUTPUT_DIR = os.path.join(JOBS_DIR, "output")
-CHUNKS_DIR = os.path.join(OUTPUT_DIR, "chunks")
+OUTPUT_DIR = os.path.join(ROOT_DIR, "output")
 DEAD_SLUG_DIR = os.path.join(DATA_DIR, "dead_slugs")
 
-# Kept for backward compatibility: historical names for the dirs above.
-SCRIPT_DIR = JOBS_DIR
-ROOT_DIR = MIDNIGHT_DIR
+# Append-only run log: one JSON line per save_results() call
+# (timestamp, totals, selected urls). Never rewritten, only appended.
+MANIFEST_LOG = os.path.join(OUTPUT_DIR, "manifest.log")
+
 
 # Matches ``window.pageData = {...};`` in Paylocity career pages.
 PAGEDATA_RE = re.compile(r"window\.pageData\s*=\s*(\{.*?\});\s*</script>", re.DOTALL)
-
-# ``"automated"`` (GitHub Actions) or ``"manual"`` (local run).
-# Written into every job's metadata via models.get_job_metadata.
-SOURCE_TYPE = "automated"
-
-
-def set_source_type(source: str) -> None:
-    """Set the source label stamped onto scraped jobs.
-
-    Args:
-        source: Either ``"automated"`` or ``"manual"``.
-
-    Raises:
-        ValueError: If ``source`` is not a known label.
-    """
-    if source not in ("automated", "manual"):
-        msg = f"Unknown source type: {source!r}"
-        raise ValueError(msg)
-    global SOURCE_TYPE
-    SOURCE_TYPE = source
-
 
 # Substrings that mark a company slug as a recruiting/staffing agency.
 RECRUITER_TERMS = [
@@ -110,35 +88,10 @@ MAX_WORKERS = {
     "paylocity": 5,
 }
 
-# Job keys kept in the slim frontend payload.
-FRONTEND_FIELDS = frozenset(
-    {
-        "title",
-        "company",
-        "location",
-        "url",
-        "ats",
-        "skill_level",
-        "is_recruiter",
-        "workplaceType",
-        "scraped_at",
-        "remote",
-        "coords",
-        "salary",
-        "updated_at",
-        "first_seen",
-    }
-)
-
-# Frontend chunk size. Chunk/manifest writing is currently disabled
-# (see results.save_results); the constant is kept for when it returns.
-CHUNK_SIZE = 25_000
-
 
 def ensure_dirs() -> None:
     """Create the output and dead-slug directories if missing.
 
     Safe to call repeatedly and from any thread before scraping.
     """
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(DEAD_SLUG_DIR, exist_ok=True)

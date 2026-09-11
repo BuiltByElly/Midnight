@@ -26,7 +26,7 @@ def load_dead_slugs(platform: str) -> set[str]:
     if not os.path.exists(filepath):
         return set()
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             return set(json.load(f))
     except OSError, json.JSONDecodeError:
         return set()
