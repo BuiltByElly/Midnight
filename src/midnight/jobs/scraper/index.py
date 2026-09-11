@@ -89,7 +89,7 @@ def scrape_all(companies: dict[str, set[str]]) -> tuple[dict[str, int], list[Job
     return all_active_companies, all_jobs
 
 
-def main() -> None:
+def main() -> list[dict[str, Any]]:
     """Run the full scrape and rank results."""
     print("\n" + "=" * 80)
     print("JOB BOARD AGGREGATOR")
@@ -104,22 +104,14 @@ def main() -> None:
         print("Exiting - no companies loaded!")
         return
 
-    all_active_companies, all_jobs = scrape_all(companies)
+    _, all_jobs = scrape_all(companies)
 
     # Combine all company sets for total count
-    all_companies = set().union(*companies.values())
+    # all_companies = set().union(*companies.values())
 
     top_jobs = save_results(all_jobs)
 
-    # Final summary
-    print("=" * 80)
-    print("FINAL SUMMARY")
-    print("=" * 80)
-    print(f"Total companies:   {len(all_companies):,}")
-    print(f"Active companies:  {len(all_active_companies):,}")
-    print(f"Total jobs:        {len(all_jobs):,}")
-    print(f"Selected top jobs: {len(top_jobs):,}")
-    print("=" * 80 + "\n")
+    return top_jobs
 
 
 if __name__ == "__main__":

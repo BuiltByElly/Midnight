@@ -2,7 +2,7 @@ import asyncio
 from time import perf_counter
 
 from midnight.hackathons.index import get_hackathon_data
-from midnight.jobs.scraper.cli import main as get_jobs_data
+from midnight.jobs.scraper.index import main as get_jobs_data
 
 
 def main():
@@ -27,9 +27,7 @@ def main():
 
     end = perf_counter()
     print("=" * 80)
-    print(
-        f"Found {len(hackathon_data):,} hackathons in {round(end - start, 1)} seconds"
-    )
+    print(f"Found {len(job_data):,} jobs in {round(end - start, 1)} seconds")
     print("=" * 80 + "\n")
 
 

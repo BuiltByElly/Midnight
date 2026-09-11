@@ -139,7 +139,7 @@ def _rank_jobs_from_profile(all_jobs: list[dict[str, Any]]) -> list[dict[str, An
         if post.canonical_url and post.canonical_url not in seen_urls
     ]
 
-    def _rank_key(post: JobPost) -> tuple:
+    def _rank_key(post: JobPost) -> tuple[float, str, str]:
         return (
             -_score_job(post, profile),
             post.company.lower(),
