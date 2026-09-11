@@ -111,6 +111,7 @@ def fetch_company_jobs_paylocity(slug: str) -> FetchResult:
                     "coords": coords,
                     "url": detail,
                     "absolute_url": detail,
+                    "description": job.get("Description"),
                     "departments": [dept] if dept else [],
                     "id": job_id,
                     "updated_at": job.get("PublishedDate"),

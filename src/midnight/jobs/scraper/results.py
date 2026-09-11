@@ -1,9 +1,11 @@
 """Rank scraped jobs against the user profile and return the best ones.
 
 Pipeline: clean -> normalize to :class:`models.JobPost` -> drop urls
-already in ``seen.json`` -> score against the profile -> keep the top
-:data:`TOP_JOBS` -> record their urls as seen -> append a run entry to
-the manifest log -> return the winners as plain dicts.
+already in ``seen.json`` -> title-rank -> enrich the top
+:data:`details.MAX_FINALISTS` with descriptions -> re-rank with the
+description signal -> keep the top :data:`TOP_JOBS` -> record their
+urls as seen -> append a run entry to the manifest log -> return the
+winners as plain dicts.
 
 Nothing is written as JSON output anymore; the only file touched is
 the append-only :data:`config.MANIFEST_LOG`.
@@ -16,6 +18,7 @@ from typing import Any
 
 from midnight.jobs.scraper import config
 from midnight.jobs.scraper.classify import clean_job_data
+from midnight.jobs.scraper.fetchers.details import MAX_FINALISTS, enrich_finalists
 from midnight.jobs.scraper.models import JobPost, normalize_jobs
 from midnight.profile import Profile, load_profile
 from midnight.utils.seen import load_seen, save_seen
@@ -25,6 +28,10 @@ SEEN_KEY = "jobs"
 
 # How many top-ranked jobs to return per run.
 TOP_JOBS = 7
+
+# Cap on the total description contribution to a job's score, so long
+# posts cannot dominate title/location/level signals.
+MAX_DESCRIPTION_SCORE = 6
 
 # skill_level bonus by years of experience band.
 _LEVEL_BONUS = {
@@ -54,9 +61,11 @@ def _score_job(job: JobPost, profile: Profile) -> float:
     """Score a job against the profile (higher is better).
 
     Title matches on the tech stack (+3 each) and interests (+2 each),
-    remote fit (+2 when both sides want remote, +2 for a profile
-    city/state/country mention), a skill-level bonus for the
-    experience band, and -2 for recruiter postings.
+    description matches at +1 each (capped at
+    :data:`MAX_DESCRIPTION_SCORE`), remote fit (+2 when both sides want
+    remote, +2 for a profile city/state/country mention), a
+    skill-level bonus for the experience band, and -2 for recruiter
+    postings. Jobs without a description score exactly as before.
 
     Args:
         job: Normalized posting to score.
@@ -76,6 +85,17 @@ def _score_job(job: JobPost, profile: Profile) -> float:
     for interest in user.interests:
         if interest.lower() in title:
             score += 2
+
+    if job.description:
+        text = job.description.lower()
+        desc_score = 0
+        for term in user.tech_stack:
+            if term.lower() in text:
+                desc_score += 1
+        for interest in user.interests:
+            if interest.lower() in text:
+                desc_score += 1
+        score += min(desc_score, MAX_DESCRIPTION_SCORE)
 
     if job.remote and user.location.remote:
         score += 2
@@ -119,14 +139,19 @@ def _rank_jobs_from_profile(all_jobs: list[dict[str, Any]]) -> list[dict[str, An
         if post.canonical_url and post.canonical_url not in seen_urls
     ]
 
-    ranked = sorted(
-        fresh,
-        key=lambda post: (
+    def _rank_key(post: JobPost) -> tuple:
+        return (
             -_score_job(post, profile),
             post.company.lower(),
             post.title.lower(),
-        ),
-    )
+        )
+
+    # Title-rank first (descriptions already on board count too), then
+    # fetch descriptions for the finalists and re-rank with the full
+    # signal before cutting to TOP_JOBS.
+    prelim = sorted(fresh, key=_rank_key)[:MAX_FINALISTS]
+    enrich_finalists(prelim)
+    ranked = sorted(fresh, key=_rank_key)
     top = ranked[:TOP_JOBS]
 
     new_urls = [

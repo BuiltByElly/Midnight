@@ -79,6 +79,8 @@ def fetch_company_jobs_lever(slug: str) -> FetchResult:
                             "remote": remote,
                             "coords": coords,
                             "url": job.get("hostedUrl"),
+                            "description": job.get("descriptionPlain")
+                            or job.get("description"),
                             "is_recruiter": is_recruiter_company(slug),
                             "ats": "Lever",
                             "skill_level": job_tier_classification(job.get("text", "")),

@@ -452,6 +452,21 @@ class TestRankJobs(unittest.TestCase):
         top, _ = self._rank([_job("Python Dev", "http://u/1", remote=True)], [])
         self.assertEqual([job["url"] for job in top], ["http://u/1"])
 
+    def test_description_breaks_title_tie(self):
+        jobs = [
+            _job("Engineer", "http://u/a", remote=True, skill_level="mid"),
+            _job(
+                "Engineer",
+                "http://u/b",
+                remote=True,
+                skill_level="mid",
+                description="We use Python and React daily",
+            ),
+        ]
+        top, _ = self._rank(jobs, [])
+        self.assertEqual([job["url"] for job in top], ["http://u/b", "http://u/a"])
+        self.assertIn("Python", top[0]["description"])
+
 
 class TestSaveResults(unittest.TestCase):
     def test_returns_ranked_and_appends_manifest(self):
@@ -487,6 +502,217 @@ class TestSaveResults(unittest.TestCase):
             self.assertEqual(
                 [name for name in os.listdir(tmp) if name.endswith(".json")], []
             )
+
+
+class TestCleanDescription(unittest.TestCase):
+    def test_strips_html_and_whitespace(self):
+        from midnight.jobs.scraper.models import clean_description
+
+        self.assertEqual(
+            clean_description("<p>Hello  <b>World</b></p>\n\nBye"),
+            "Hello World Bye",
+        )
+
+    def test_truncates(self):
+        from midnight.jobs.scraper.models import (
+            DESCRIPTION_MAX_LEN,
+            clean_description,
+        )
+
+        self.assertEqual(len(clean_description("x" * 9000)), DESCRIPTION_MAX_LEN)
+
+    def test_blank_inputs(self):
+        from midnight.jobs.scraper.models import clean_description
+
+        self.assertIsNone(clean_description(None))
+        self.assertIsNone(clean_description("   "))
+        self.assertIsNone(clean_description(123))
+
+    def test_jobpost_cleans_description(self):
+        from midnight.jobs.scraper.models import JobPost
+
+        post = JobPost(description="<p>Python role</p>")
+        self.assertEqual(post.description, "Python role")
+
+
+class TestAshbyPostingApi(unittest.TestCase):
+    def _posting(self, **overrides):
+        base = {
+            "id": "abc",
+            "title": "Python Engineer",
+            "location": "Remote",
+            "descriptionPlain": "We use Python daily. " * 10,
+            "isRemote": True,
+            "workplaceType": "Remote",
+            "publishedAt": "2026-01-01T00:00:00.000+00:00",
+            "jobUrl": "https://jobs.ashbyhq.com/acme/abc",
+        }
+        base.update(overrides)
+        return base
+
+    def test_posting_api_used(self):
+        import midnight.jobs.scraper.fetchers.ashby as ab
+
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {"jobs": [self._posting()]}
+        with (
+            mock.patch("requests.get", return_value=resp),
+            mock.patch("requests.post") as post,
+            mock.patch("time.sleep"),
+        ):
+            slug, jobs, status = ab.fetch_company_jobs_ashby("acme")
+        self.assertEqual((slug, status), ("acme", 200))
+        post.assert_not_called()
+        self.assertEqual(len(jobs), 1)
+        job = jobs[0]
+        self.assertTrue(job["remote"])
+        self.assertIn("Python", job["description"])
+        self.assertNotIn("<", job["description"])
+        self.assertEqual(job["updated_at"], "2026-01-01T00:00:00.000+00:00")
+
+    def test_graphql_fallback_on_404(self):
+        import midnight.jobs.scraper.fetchers.ashby as ab
+
+        posting_404 = mock.Mock(status_code=404)
+        gql = mock.Mock(status_code=200)
+        gql.json.return_value = {
+            "data": {
+                "jobBoard": {
+                    "jobPostings": [{"id": "1", "title": "Dev", "locationName": "NYC"}]
+                }
+            }
+        }
+        with (
+            mock.patch("requests.get", return_value=posting_404),
+            mock.patch("requests.post", return_value=gql) as post,
+            mock.patch("time.sleep"),
+        ):
+            slug, jobs, status = ab.fetch_company_jobs_ashby("acme")
+        # legacy GraphQL loop re-posts per attempt (max_retries + 1)
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual((slug, status, len(jobs)), ("acme", 200, 1))
+        self.assertNotIn("description", jobs[0])
+
+
+class TestGreenhouseContent(unittest.TestCase):
+    def test_content_param_and_description(self):
+        import midnight.jobs.scraper.fetchers.greenhouse as gh
+
+        payload = {
+            "jobs": [
+                {
+                    "title": "Engineer",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "http://jobs/1",
+                    "departments": [],
+                    "id": 1,
+                    "updated_at": "2026-01-01",
+                    "content": "<p>Python role</p>",
+                }
+            ]
+        }
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = payload
+        with (
+            mock.patch("requests.get", return_value=resp) as get,
+            mock.patch.object(gh, "enrich_location", return_value=(True, None)),
+            mock.patch("time.sleep"),
+        ):
+            _slug, jobs, status = gh.fetch_company_jobs_greenhouse("acme")
+        self.assertIn("content=true", get.call_args[0][0])
+        self.assertEqual(status, 200)
+        self.assertEqual(jobs[0]["description"], "<p>Python role</p>")
+
+
+class TestLeverDescription(unittest.TestCase):
+    def test_description_plain_stored(self):
+        import midnight.jobs.scraper.fetchers.lever as lv
+
+        payload = [
+            {
+                "text": "Engineer",
+                "categories": {"location": "Remote"},
+                "hostedUrl": "http://jobs/1",
+                "descriptionPlain": "Python role. " * 20,
+            }
+        ]
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = payload
+        with (
+            mock.patch("requests.get", return_value=resp),
+            mock.patch.object(lv, "enrich_location", return_value=(True, None)),
+            mock.patch("time.sleep"),
+        ):
+            _slug, jobs, status = lv.fetch_company_jobs_lever("acme")
+        self.assertEqual(status, 200)
+        self.assertIn("Python role", jobs[0]["description"])
+
+
+class TestDetails(unittest.TestCase):
+    def test_workday_detail(self):
+        from midnight.jobs.scraper.fetchers.details import _workday_description
+        from midnight.jobs.scraper.models import JobPost
+
+        resp = mock.Mock(status_code=200)
+        resp.json.return_value = {
+            "jobPostingInfo": {"jobDescription": "<p>Python job</p>"}
+        }
+        post = JobPost(
+            title="E",
+            url="https://acme.wd1.myworkdayjobs.com/acme/site/job/X_REQ_1",
+            company_slug="acme|wd1|site",
+            ats="Workday",
+        )
+        with (
+            mock.patch("requests.get", return_value=resp) as get,
+            mock.patch("time.sleep"),
+        ):
+            self.assertEqual(_workday_description(post), "Python job")
+        self.assertIn("/wday/cxs/acme/site/job/X_REQ_1", get.call_args[0][0])
+
+    def test_page_selector_and_og_fallback(self):
+        from midnight.jobs.scraper.fetchers.details import _page_description
+
+        html = (
+            "<html><head>"
+            '<meta property="og:description" content="OG text here">'
+            "</head><body>"
+            '<div class="job-preview-details"><p>Full posting text. '
+            + "Detail. "
+            * 60
+            + "</p></div>'"
+            "</body></html>"
+        )
+        resp = mock.Mock(status_code=200, text=html)
+        with mock.patch("requests.get", return_value=resp):
+            self.assertTrue(
+                _page_description("http://x", ["div.job-preview-details"]).startswith(
+                    "Full posting text."
+                )
+            )
+            self.assertEqual(
+                _page_description("http://x", ["div.missing"]), "OG text here"
+            )
+            # no selector hit and no og tag
+            resp.text = "<html><body><p>hi</p></body></html>"
+            self.assertIsNone(_page_description("http://x", ["div.missing"]))
+
+    def test_enrich_skips_and_caches(self):
+        from midnight.jobs.scraper.fetchers import details
+        from midnight.jobs.scraper.models import JobPost
+
+        details._detail_cache.clear()
+        with_desc = JobPost(title="E", url="http://x/1", description="Hi")
+        unknown = JobPost(title="E", url="http://x/2", ats="unknown")
+        bamboo = JobPost(title="E", url="http://x/3", ats="BambooHR")
+        resp = mock.Mock(status_code=200, text="<html><body><p>hi</p></body></html>")
+        with mock.patch("requests.get", return_value=resp) as get:
+            details.enrich_finalists([with_desc, unknown, bamboo])
+            details.enrich_finalists([bamboo])
+        # with_desc + unknown need no HTTP; bamboo fetched once then cached
+        self.assertEqual(get.call_count, 1)
+        self.assertIsNone(bamboo.description)
+        details._detail_cache.clear()
 
 
 if __name__ == "__main__":

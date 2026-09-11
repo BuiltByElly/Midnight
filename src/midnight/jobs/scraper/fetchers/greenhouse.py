@@ -36,7 +36,8 @@ def fetch_company_jobs_greenhouse(slug: str) -> FetchResult:
         and ``status`` is the HTTP status, or None on network/parse
         failure.
     """
-    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+    # content=true includes the full post description per job.
+    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
     headers = {
         "Accept": "application/json",
         "User-Agent": random_user_agent(),
@@ -85,6 +86,7 @@ def fetch_company_jobs_greenhouse(slug: str) -> FetchResult:
                             "coords": coords,
                             "url": job.get("absolute_url"),
                             "absolute_url": job.get("absolute_url"),
+                            "description": job.get("content"),
                             "departments": [
                                 d.get("name") for d in job.get("departments", [])
                             ],

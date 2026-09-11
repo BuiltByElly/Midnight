@@ -14,10 +14,36 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 # A normalized job record.
 Job = dict[str, Any]
+
+# Max plaintext characters kept for a job description.
+DESCRIPTION_MAX_LEN = 8000
+
+
+def clean_description(value: Any) -> str | None:
+    """Normalize a raw description to capped plaintext.
+
+    Strips HTML (if any), collapses whitespace, and truncates to
+    :data:`DESCRIPTION_MAX_LEN` characters.
+
+    Args:
+        value: Raw description (HTML or text) from any source.
+
+    Returns:
+        Cleaned plaintext, or None when the input is blank/missing.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    if "<" in value and ">" in value:
+        value = BeautifulSoup(value, "html.parser").get_text(separator=" ")
+    text = " ".join(value.split())
+    if not text:
+        return None
+    return text[:DESCRIPTION_MAX_LEN]
 
 
 class JobPost(BaseModel):
@@ -47,6 +73,7 @@ class JobPost(BaseModel):
     ats: str = "unknown"
     skill_level: str = "mid"
     scraped_at: str | None = None
+    description: str | None = None
 
     @field_validator("skill_level", mode="before")
     @classmethod
@@ -56,6 +83,12 @@ class JobPost(BaseModel):
         if level in {"intern", "entry", "mid", "senior"}:
             return level
         return "entry"
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _clean_description(cls, value: Any) -> str | None:
+        """Normalize any raw description to capped plaintext."""
+        return clean_description(value)
 
     @model_validator(mode="after")
     def _apply_fallbacks(self) -> JobPost:
@@ -120,10 +153,12 @@ def get_job_metadata() -> dict[str, str]:
 
 
 __all__ = [
+    "DESCRIPTION_MAX_LEN",
     "FetchResult",
     "Fetcher",
     "Job",
     "JobPost",
+    "clean_description",
     "get_job_metadata",
     "normalize_jobs",
 ]
