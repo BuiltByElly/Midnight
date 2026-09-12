@@ -13,6 +13,7 @@ the append-only :data:`config.MANIFEST_LOG`.
 
 import json
 import os
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,10 +34,97 @@ TOP_JOBS = 7
 # posts cannot dominate title/location/level signals.
 MAX_DESCRIPTION_SCORE = 6
 
-# skill_level bonus by years of experience band.
+# Title variants for profile terms that rarely appear verbatim in job
+# titles ("AI/ML" vs "Machine Learning Engineer", "Mobiles" vs
+# "Mobile"). Keys and values are matched case-insensitively on word
+# boundaries, so short aliases like "ai" never match inside "retail".
+TERM_ALIASES = {
+    "ai/ml": [
+        "ai",
+        "ml",
+        "machine learning",
+        "artificial intelligence",
+        "data science",
+        "deep learning",
+        "llm",
+        "nlp",
+    ],
+    "software development": [
+        "software",
+        "developer",
+        "engineer",
+        "engineering",
+        "sde",
+        "programmer",
+    ],
+    "mobiles": ["mobile", "android", "ios", "flutter", "react native"],
+    "mobile": ["android", "ios"],
+    "open source": ["open-source", "oss"],
+    "web": [
+        "frontend",
+        "front-end",
+        "backend",
+        "back-end",
+        "fullstack",
+        "full-stack",
+    ],
+    "design": ["designer", "ux", "ui", "product design", "figma"],
+    "javascript": ["js", "ecmascript"],
+    "typescript": ["ts"],
+    "react": ["reactjs", "react.js", "next.js", "nextjs"],
+    "node.js": ["nodejs", "node"],
+    "nodejs": ["node"],
+    "next.js": ["nextjs"],
+    "python": ["django", "flask", "fastapi"],
+}
+
+
+def _contains_word(text: str, term: str) -> bool:
+    """Check for a whole-word (or phrase) match, case-insensitive.
+
+    Args:
+        text: Already-lowercased text to search.
+        term: Term to find (matched literally, not as regex).
+
+    Returns:
+        True when ``term`` appears on word boundaries.
+    """
+    return re.search(r"\b" + re.escape(term.lower()) + r"\b", text) is not None
+
+
+def _split_exact_and_alias(text: str, terms: list[str]) -> tuple[set[str], set[str]]:
+    """Partition profile terms into exact hits and alias hits.
+
+    A term counts as exact when it appears verbatim; otherwise each of
+    its :data:`TERM_ALIASES` present in the text counts as an alias hit.
+
+    Args:
+        text: Already-lowercased text to search.
+        terms: Profile terms (tech stack or interests).
+
+    Returns:
+        ``(exact_terms, alias_terms)`` as lowercase sets.
+    """
+    exact, alias = set(), set()
+    for term in terms:
+        lowered = term.lower()
+        if _contains_word(text, lowered):
+            exact.add(lowered)
+        else:
+            for alt in TERM_ALIASES.get(lowered, []):
+                if _contains_word(text, alt):
+                    alias.add(alt)
+    return exact, alias
+
+
+# skill_level bonus by years of experience band. Kept small on purpose:
+# skill relevance decides relevance, level only nudges. Shape mirrors
+# the previous table (entry/intern favored for juniors, mid peak for
+# mids, senior peak for seniors) at a scale that no longer swamps a
+# +3 stack match.
 _LEVEL_BONUS = {
-    "junior": {"intern": 4, "entry": 5, "mid": 1, "senior": -1},
-    "mid": {"intern": 2, "entry": 3, "mid": 5, "senior": -1},
+    "junior": {"intern": 2, "entry": 2, "mid": 1, "senior": -1},
+    "mid": {"intern": -2, "entry": 1, "mid": 2, "senior": 0},
     "senior": {"intern": -3, "entry": -1, "mid": 1, "senior": 2},
 }
 
@@ -60,10 +148,11 @@ def _experience_band(years: int) -> str:
 def _score_job(job: JobPost, profile: Profile) -> float:
     """Score a job against the profile (higher is better).
 
-    Title matches on the tech stack (+3 each) and interests (+2 each),
-    description matches at +1 each (capped at
-    :data:`MAX_DESCRIPTION_SCORE`), remote fit (+2 when both sides want
-    remote, +2 for a profile city/state/country mention), a
+    Whole-word title matches on the tech stack (+3 each) and interests
+    (+2 each), plus :data:`TERM_ALIASES` hits (+1 each, only for terms
+    without an exact match). Description matches score +1 each (capped
+    at :data:`MAX_DESCRIPTION_SCORE`). Remote fit (+2 when both sides
+    want remote, +2 for a profile city/state/country mention), a
     skill-level bonus for the experience band, and -2 for recruiter
     postings. Jobs without a description score exactly as before.
 
@@ -79,28 +168,33 @@ def _score_job(job: JobPost, profile: Profile) -> float:
     location = job.location.lower()
     score = 0.0
 
-    for term in user.tech_stack:
-        if term.lower() in title:
-            score += 3
-    for interest in user.interests:
-        if interest.lower() in title:
-            score += 2
+    stack_exact, stack_alias = _split_exact_and_alias(title, user.tech_stack)
+    interest_exact, interest_alias = _split_exact_and_alias(title, user.interests)
+    score += (
+        3 * len(stack_exact)
+        + 2 * len(interest_exact)
+        + len(stack_alias | interest_alias)
+    )
 
     if job.description:
         text = job.description.lower()
-        desc_score = 0
-        for term in user.tech_stack:
-            if term.lower() in text:
-                desc_score += 1
-        for interest in user.interests:
-            if interest.lower() in text:
-                desc_score += 1
+        desc_exact_stack, desc_alias_stack = _split_exact_and_alias(
+            text, user.tech_stack
+        )
+        desc_exact_interest, desc_alias_interest = _split_exact_and_alias(
+            text, user.interests
+        )
+        desc_score = (
+            len(desc_exact_stack)
+            + len(desc_exact_interest)
+            + len(desc_alias_stack | desc_alias_interest)
+        )
         score += min(desc_score, MAX_DESCRIPTION_SCORE)
 
     if job.remote and user.location.remote:
         score += 2
     for place in (user.location.city, user.location.state, user.location.country):
-        if place and place.lower() in location:
+        if place and _contains_word(location, place):
             score += 2
             break
 

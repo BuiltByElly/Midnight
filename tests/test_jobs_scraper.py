@@ -432,13 +432,13 @@ class TestRankJobs(unittest.TestCase):
         self.assertEqual(
             urls,
             [
-                "http://u/j2",  # 10: stack + country + junior-entry
-                "http://u/j8",  # 9: stack + remote + junior-intern
-                "http://u/j3",  # 6: stack + remote + junior-mid
-                "http://u/j5",  # 4, tiebreak before zeta
-                "http://u/j1",  # 4
-                "http://u/j4",  # 3, tiebreak before ML Engineer
-                "http://u/j6",  # 3
+                "http://u/j2",  # 8: stack + developer-alias + country + entry
+                "http://u/j8",  # 7: stack + remote + intern
+                "http://u/j3",  # 6: stack + remote + mid
+                "http://u/j6",  # 5: ml/engineer aliases + remote + mid
+                "http://u/j5",  # 5, tiebreak before zeta
+                "http://u/j1",  # 5
+                "http://u/j4",  # 3: location + mid only
             ],
         )
         # same dict shape as normalized input
@@ -713,6 +713,62 @@ class TestDetails(unittest.TestCase):
         self.assertEqual(get.call_count, 1)
         self.assertIsNone(bamboo.description)
         details._detail_cache.clear()
+
+
+class TestMatching(unittest.TestCase):
+    def _score(self, title, **overrides):
+        import midnight.jobs.scraper.results as res
+        from midnight.jobs.scraper.models import JobPost
+
+        base = {"title": title, "url": "http://u/x", "skill_level": "mid"}
+        base.update(overrides)
+        return res._score_job(JobPost(**base), _fixture_profile())
+
+    def test_alias_matches(self):
+        # "Machine Learning Engineer" matches the AI/ML interest via alias
+        self.assertEqual(
+            self._score("Machine Learning Engineer", remote=True), 4.0
+        )  # alias +1, remote +2, mid +1
+
+    def test_word_boundaries_block_false_positives(self):
+        # "ai" must not match inside "retail"; "react" must not match
+        # inside "interaction"
+        self.assertEqual(
+            self._score("Retail Associate", skill_level="entry"), 2.0
+        )  # entry bonus only
+        self.assertEqual(
+            self._score("Customer Interaction Specialist"), 1.0
+        )  # mid bonus only
+
+    def test_location_word_boundaries(self):
+        # "Edo" (profile state) must not match inside "Laredo" or "Toledo"
+        self.assertEqual(
+            self._score("Sales Associate", location="Laredo, TX", skill_level="entry"),
+            2.0,  # entry bonus only
+        )
+        self.assertEqual(
+            self._score(
+                "Support Officer",
+                location="Benin City, Edo",
+                skill_level="mid",
+            ),
+            3.0,  # location +2, mid +1
+        )
+
+    def test_mobile_matches_mobiles(self):
+        import midnight.jobs.scraper.results as res
+        from midnight.jobs.scraper.models import JobPost
+
+        profile = _fixture_profile()
+        profile.user.interests = ["Mobiles"]
+        post = JobPost(title="Mobile Developer", url="http://u/x")
+        self.assertEqual(res._score_job(post, profile), 2.0)  # alias +1, mid +1
+
+    def test_description_score_capped(self):
+        post_desc = "Python React AI ML machine learning data science LLM deep learning"
+        self.assertEqual(
+            self._score("Clerk", description=post_desc), 7.0
+        )  # mid +1, desc capped at +6
 
 
 if __name__ == "__main__":
