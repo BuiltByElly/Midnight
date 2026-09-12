@@ -1,4 +1,5 @@
 import asyncio
+import json
 from time import perf_counter
 
 from midnight.hackathons.index import get_hackathon_data
@@ -37,12 +38,12 @@ def main():
     print("=" * 80)
     print("HACKATHONS")
     print("=" * 80)
-    print(hackathon_data)
+    print(json.dumps(hackathon_data, indent=4))
 
     print("=" * 80)
     print("JOBS")
     print("=" * 80)
-    print(job_data)
+    print(json.dumps(job_data, indent=4))
 
 
 if __name__ == "__main__":
