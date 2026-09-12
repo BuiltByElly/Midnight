@@ -10,7 +10,9 @@ Run directly::
     python -m midnight.jobs.scraper
 """
 
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from midnight.jobs.scraper.companies import load_companies, load_paylocity
 from midnight.jobs.scraper.config import (
@@ -90,7 +92,12 @@ def scrape_all(companies: dict[str, set[str]]) -> tuple[dict[str, int], list[Job
 
 
 def main() -> list[dict[str, Any]]:
-    """Run the full scrape and rank results."""
+    """Run the full scrape and rank results.
+
+    Set the ``MIDNIGHT_COMPANY_LIMIT`` env var to cap companies per
+    platform (used by CI smoke runs so they finish in minutes instead
+    of hours). Unset (or ``0``) means no cap.
+    """
     print("\n" + "=" * 80)
     print("JOB BOARD AGGREGATOR")
     print("Scraping all jobs from ATS companies")
@@ -100,9 +107,19 @@ def main() -> list[dict[str, Any]]:
 
     companies = load_all_companies()
 
+    try:
+        limit = int(os.environ.get("MIDNIGHT_COMPANY_LIMIT", "0"))
+    except ValueError:
+        limit = 0
+    if limit > 0:
+        companies = {
+            name: set(sorted(slugs)[:limit]) for name, slugs in companies.items()
+        }
+        print(f"Company limit active: {limit} per platform (MIDNIGHT_COMPANY_LIMIT)\n")
+
     if not any(companies.values()):
         print("Exiting - no companies loaded!")
-        return
+        return []
 
     _, all_jobs = scrape_all(companies)
 

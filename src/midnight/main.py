@@ -30,6 +30,20 @@ def main():
     print(f"Found {len(job_data):,} jobs in {round(end - start, 1)} seconds")
     print("=" * 80 + "\n")
 
+    print("=" * 80)
+    print("Final Results")
+    print("=" * 80 + "\n")
+
+    print("=" * 80)
+    print("HACKATHONS")
+    print("=" * 80)
+    print(hackathon_data)
+
+    print("=" * 80)
+    print("JOBS")
+    print("=" * 80)
+    print(job_data)
+
 
 if __name__ == "__main__":
     _ = main()

@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-midnight = "midnight:main"
+midnight = "midnight.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]

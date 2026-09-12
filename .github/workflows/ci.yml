@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so pushes don't pile up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run test suite
+        run: python -m unittest discover -s tests -v
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check src/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check src/ tests/
+
+  smoke:
+    name: Full-app smoke run
+    runs-on: ubuntu-latest
+    needs: [tests, lint]
+    timeout-minutes: 15
+    env:
+      # Cap companies per platform so the full pipeline
+      # (hackathons + all 7 ATS scrapers + ranking) finishes in
+      # minutes instead of hours. Unset locally for real runs.
+      MIDNIGHT_COMPANY_LIMIT: "3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run midnight end to end
+        # Any unhandled exception exits non-zero and fails the job.
+        run: python -m midnight.main
